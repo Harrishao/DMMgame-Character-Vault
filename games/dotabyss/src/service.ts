@@ -2,11 +2,18 @@
 const path=require('node:path');
 const {acquirePackLock}=require('../../../app/projects.ts'),lock=require('../../../app/download-lock.ts');
 const {readJson,writeJson}=require('./catalog.ts');
+const {getStoryTranslations}=require('./translation.ts');
 function createCatalogService({root,origin,fetchResource,validId,readCatalog,collectionScope,collect,statusName}){
   const file=path.join(root,'state',statusName+'-status.json');
   const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
   return {async handle(request){
     const url=new URL(request.url);if(url.origin!==origin||!url.pathname.startsWith('/api/'))return null;
+    if(url.pathname==='/api/translation'&&request.method==='GET'){
+      const segmentsParam = url.searchParams.get('segments') || '';
+      const segments = segmentsParam.split(',').map(s => s.trim()).filter(Boolean);
+      const result = await getStoryTranslations({ root, segments });
+      return json(result);
+    }
     if(url.pathname==='/api/status'&&request.method==='GET'){
       const state=readJson(file,null);if(state?.state==='running'&&!lock.busy(path.join(root,'state/pack.lock')))state.state='interrupted';return json(state);
     }
