@@ -104,15 +104,18 @@ export class DotabyssStoryPlayer{
     this.ui=new OriginalStoryUi(this,this.nativeData);this.applyTheme();
     this.clickEffect?.destroy();if(this.nativeData.click)this.clickEffect=new DotabyssClickEffect(this.nativeData.click,{asset:this.asset,root:this.container});
     if(story.segments?.length>1)this.positionKey+='-complete-v1';
+    this.namesMap={};this.dialoguesMap={};
     const segList=(story.segments?.length?story.segments:[story.address||story.name]);
     const segs=segList.map((s: string)=>String(s||'').split(/[\\/]/).pop()?.replace(/\.txt$/,'')).filter(Boolean);
-    fetch('/games/dotabyss/api/translation?segments='+encodeURIComponent(segs.join(',')))
+    const fetchTrans = fetch('/games/dotabyss/api/translation?segments='+encodeURIComponent(segs.join(',')))
       .then(r=>r.ok?r.json():null)
       .then(data=>{
-        if(token!==this.token||!data)return;
+        if(this.story!==story||!data)return;
         this.namesMap=data.names||{};this.dialoguesMap=data.dialogues||{};
         if(this.translated&&this.currentAction)this.showText(this.currentAction.speaker,this.currentAction.text,true);
       }).catch(()=>{});
+    await Promise.race([fetchTrans, new Promise(resolve=>setTimeout(resolve, 800))]);
+    if(this.story!==story)return;
     this.engine=new StoryEngine(story.program,{execute:(action,options)=>this.execute(action,options),reset:()=>this.reset(),stop:()=>this.stop(),stopVoice:()=>this.audio.stop('voice'),reveal:()=>this.reveal(),finish:()=>this.finish()},{onLine:(action,line)=>this.line(action,line),onEnd:()=>{this.next.disabled=true;this.position.textContent='剧情结束';},onError:error=>this.fail(error)});
     const saved=Number(localStorage.getItem(this.positionKey));const line=Number.isInteger(saved)&&saved>=0&&saved<story.program.dialogue?saved:0;await this.engine.start({line});
     if(this.engine.waiting&&this.container.isConnected&&!this.container.contains(document.activeElement))this.stage.focus({preventScroll:true});
@@ -179,19 +182,26 @@ export class DotabyssStoryPlayer{
   resolveSpeaker(speaker: string){
     if(!speaker)return '';
     if(this.translated){
-      if(speaker==='<user>'||speaker==='<player>')return '司令官';
+      if(speaker==='<user>'||speaker==='<player>'||speaker==='プレイヤー')return '司令官';
       return this.namesMap?.[speaker]||speaker;
     }
     return speaker==='<user>'||speaker==='<player>'?'プレイヤー':speaker;
   }
   resolveDialogue(text: string){
-    if(!this.translated||!this.dialoguesMap)return text;
-    if(this.dialoguesMap[text])return this.dialoguesMap[text];
-    const norm=String(text).replace(/<br\s*\/?>/gi,'<br>').trim();
-    for(const [k,v]of Object.entries<string>(this.dialoguesMap)){
-      if(k.replace(/<br\s*\/?>/gi,'<br>').trim()===norm)return v;
+    if(!text)return '';
+    if(!this.translated||!this.dialoguesMap)return String(text).replace(/<user>|<player>/g,'プレイヤー');
+    let res=this.dialoguesMap[text];
+    if(!res){
+      const norm=String(text).replace(/<br\s*\/?>/gi,'<br>').trim();
+      for(const [k,v]of Object.entries<string>(this.dialoguesMap)){
+        if(k.replace(/<br\s*\/?>/gi,'<br>').trim()===norm){
+          res=v;
+          break;
+        }
+      }
     }
-    return text;
+    const finalVal=res||text;
+    return String(finalVal).replace(/<user>|<player>|プレイヤー/g,'司令官');
   }
   showText(speaker,text,instant){
     clearTimeout(this.typeTimer);this.speakerName=this.resolveSpeaker(speaker);this.writeText('');
@@ -205,5 +215,5 @@ export class DotabyssStoryPlayer{
   line(action,line){this.lineDisplayed=performance.now();this.previous.disabled=line===0;this.next.disabled=false;this.toolbar.restart.disabled=false;this.position.textContent=(line+1)+' / '+this.story.program.dialogue;localStorage.setItem(this.positionKey,String(line));}
   showLog(){this.ui?.openLog();this.log=this.ui?.modal?.host;}
   finish(){this.hold.stop();this.audio.stopAll();this.marker.hidden=true;}
-  destroy(){this.toolbar.destroy();this.engine?.stop();this.stop();this.hold.destroy();this.clickEffect?.destroy();this.ui?.destroy();this.ui=null;this.scene.destroy();clearInterval(this.autoTimer);this.observer.disconnect();document.removeEventListener('visibilitychange',this.visibility);this.container.replaceChildren();}
+  destroy(){this.toolbar.destroy();this.engine?.stop();this.stop();this.hold.destroy();this.clickEffect?.destroy();this.ui?.destroy();this.ui=null;this.scene.destroy();clearInterval(this.autoTimer);this.observer.disconnect();document.removeEventListener('visibilitychange',this.visibility);this.story=null;this.namesMap={};this.dialoguesMap={};this.container.replaceChildren();}
 }
