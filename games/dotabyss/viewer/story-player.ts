@@ -61,9 +61,14 @@ export class DotabyssStoryPlayer{
   declare fullText: any;
   declare textInterval: any;
   declare log: any;
+  declare translated: boolean;
+  declare namesMap: Record<string, string>;
+  declare dialoguesMap: Record<string, string>;
+  declare currentAction: any;
 
   constructor(container,{asset,assetRoot,positionKey,onError=()=>{}}){
     this.container=container;this.asset=asset;this.assetRoot=assetRoot;this.positionKey=positionKey;this.onError=onError;this.token=0;this.animations=new Set<string>();this.activeModel=null;this.auto=false;this.hiddenUi=false;
+    this.translated=localStorage.getItem('dotabyss-story-translate')!=='false';this.namesMap={};this.dialoguesMap={};this.currentAction=null;
     this.audio=new StoryAudio({asset});this.observer=new ResizeObserver(()=>this.fit());this.visibility=()=>{if(document.hidden)this.audio.pauseAll();else this.audio.resumeAll();};document.addEventListener('visibilitychange',this.visibility);
     this.render();this.observer.observe(this.stage);
   }
@@ -76,7 +81,8 @@ export class DotabyssStoryPlayer{
     this.stage.append(this.back,this.camera,this.overlay,this.error);
     this.scene=new StoryScene(this);this.scene.reset();
     this.position=node('span','dotabyss-position');
-    this.toolbar=new StoryControls(this.container,{previous:()=>this.engine?.previous(),next:()=>this.engine?.next(),restart:()=>this.restart()},{className:'dotabyss-reader-footer',position:this.position,onError:this.onError});
+    this.toolbar=new StoryControls(this.container,{previous:()=>this.engine?.previous(),next:()=>this.engine?.next(),restart:()=>this.restart(),translate:()=>this.toggleTranslation()},{className:'dotabyss-reader-footer',position:this.position,onError:this.onError,translateLabel:this.translated?'翻译：开':'翻译：关'});
+    if(this.toolbar.translate)this.toolbar.translate.classList.toggle('is-active',this.translated);
     this.footer=this.toolbar.element;this.previous=this.toolbar.previous;this.next=this.toolbar.next;this.closeButton=this.toolbar.close;this.fullscreenButton=this.toolbar.fullscreen;
     this.position.textContent='正在读取剧情…';
     this.container.replaceChildren(this.stage,this.footer);
@@ -98,6 +104,15 @@ export class DotabyssStoryPlayer{
     this.ui=new OriginalStoryUi(this,this.nativeData);this.applyTheme();
     this.clickEffect?.destroy();if(this.nativeData.click)this.clickEffect=new DotabyssClickEffect(this.nativeData.click,{asset:this.asset,root:this.container});
     if(story.segments?.length>1)this.positionKey+='-complete-v1';
+    const segList=(story.segments?.length?story.segments:[story.address||story.name]);
+    const segs=segList.map((s: string)=>String(s||'').split(/[\\/]/).pop()?.replace(/\.txt$/,'')).filter(Boolean);
+    fetch('/games/dotabyss/api/translation?segments='+encodeURIComponent(segs.join(',')))
+      .then(r=>r.ok?r.json():null)
+      .then(data=>{
+        if(token!==this.token||!data)return;
+        this.namesMap=data.names||{};this.dialoguesMap=data.dialogues||{};
+        if(this.translated&&this.currentAction)this.showText(this.currentAction.speaker,this.currentAction.text,true);
+      }).catch(()=>{});
     this.engine=new StoryEngine(story.program,{execute:(action,options)=>this.execute(action,options),reset:()=>this.reset(),stop:()=>this.stop(),stopVoice:()=>this.audio.stop('voice'),reveal:()=>this.reveal(),finish:()=>this.finish()},{onLine:(action,line)=>this.line(action,line),onEnd:()=>{this.next.disabled=true;this.position.textContent='剧情结束';},onError:error=>this.fail(error)});
     const saved=Number(localStorage.getItem(this.positionKey));const line=Number.isInteger(saved)&&saved>=0&&saved<story.program.dialogue?saved:0;await this.engine.start({line});
     if(this.engine.waiting&&this.container.isConnected&&!this.container.contains(document.activeElement))this.stage.focus({preventScroll:true});
@@ -142,6 +157,7 @@ export class DotabyssStoryPlayer{
       if((!silent||kind!=='se')&&(!this.fastForward||kind!=='se'))this.audio.play(a[0],resource.file,{kind,loop:kind==='bgm'||kind==='bgv'&&(a[3]?on(a[3]):resource.loop),fade:instant?0:number(a[2+offset]),volume:kind==='bgv'?1:number(a[3+offset],1)});
     }else if(op==='bgmstop'||op==='bgvstop'||op==='sestop')await this.audio.stop(a[0],instant?0:number(a[1]));
     else if(action.dialogue!==undefined){
+      this.currentAction=action;
       this.textMode=['messageTextCenter','messageTextUnder'].includes(op)?op:null;this.scene.overlay.hidden=!this.textMode;if(this.textMode){this.scene.overlay.style.inset=this.textMode==='messageTextUnder'?'65% 10% 8%':'20% 10%';}
       this.showText(action.speaker,action.text,instant);const file=action.cue&&this.story.audio[action.cue]?.file;this.audio.stop('voice');if(action.cue&&!file)throw new Error('本句配音尚未保存，请更新剧情素材。');if(file&&!silent&&!this.fastForward)this.audio.play('voice',file,{kind:'voice'});
     }else if(op==='cleanall'){this.audio.stopAll();this.player?.resetCommands();this.scene.reset();}
@@ -150,9 +166,36 @@ export class DotabyssStoryPlayer{
     else if(op==='transitionFade'){this.overlay.style.background=colors[String(a[2]).toLowerCase()]||'#000';await this.animate(this.overlay,{opacity:a[1]==='out'?'1':'0'},number(a[3]),instant);}
     else throw new Error('该剧情包含暂未支持的演出：'+op);
   }
+  toggleTranslation(){
+    this.translated=!this.translated;
+    localStorage.setItem('dotabyss-story-translate',String(this.translated));
+    if(this.toolbar.translate){
+      this.toolbar.translate.textContent=this.translated?'翻译：开':'翻译：关';
+      this.toolbar.translate.setAttribute('aria-label',this.toolbar.translate.textContent);
+      this.toolbar.translate.classList.toggle('is-active',this.translated);
+    }
+    if(this.currentAction)this.showText(this.currentAction.speaker,this.currentAction.text,true);
+  }
+  resolveSpeaker(speaker: string){
+    if(!speaker)return '';
+    if(this.translated){
+      if(speaker==='<user>'||speaker==='<player>')return '司令官';
+      return this.namesMap?.[speaker]||speaker;
+    }
+    return speaker==='<user>'||speaker==='<player>'?'プレイヤー':speaker;
+  }
+  resolveDialogue(text: string){
+    if(!this.translated||!this.dialoguesMap)return text;
+    if(this.dialoguesMap[text])return this.dialoguesMap[text];
+    const norm=String(text).replace(/<br\s*\/?>/gi,'<br>').trim();
+    for(const [k,v]of Object.entries<string>(this.dialoguesMap)){
+      if(k.replace(/<br\s*\/?>/gi,'<br>').trim()===norm)return v;
+    }
+    return text;
+  }
   showText(speaker,text,instant){
-    clearTimeout(this.typeTimer);this.speakerName=speaker==='<user>'?'プレイヤー':speaker;this.writeText('');
-    const plain=String(text).replace(/<br\s*\/?\s*>/gi,'\n').replace(/<\/?(?:color|size|b|i|ruby|rt|font)(?:=[^>]*)?>/gi,'').replace(/\\n/g,'\n');
+    clearTimeout(this.typeTimer);this.speakerName=this.resolveSpeaker(speaker);this.writeText('');
+    const plain=String(this.resolveDialogue(text)).replace(/<br\s*\/?\s*>/gi,'\n').replace(/<\/?(?:color|size|b|i|ruby|rt|font)(?:=[^>]*)?>/gi,'').replace(/\\n/g,'\n');
     this.fullText=plain;this.typing=!instant&&this.textInterval>0;this.marker.hidden=true;let at=0;const letters=[...plain],token=this.token;
     const type=()=>{if(token!==this.token)return;this.writeText(letters.slice(0,++at).join(''));if(at<letters.length&&this.typing)this.typeTimer=setTimeout(type,this.textInterval);else{this.typing=false;this.writeText(plain);this.marker.hidden=false;}};
     if(this.typing)type();else{this.writeText(plain);this.marker.hidden=!this.theme.marker?.file;}

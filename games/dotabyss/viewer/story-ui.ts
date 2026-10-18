@@ -127,7 +127,9 @@ export class OriginalStoryUi{
     const font=Object.values<any>(this.data.fonts)[0]||{size:36,glyphs:{}},rowWidth=view.nodes.get('Box/Contents/Scroll View/Viewport').rect.width-24;
     const rect=(view,path,x,y,width,height)=>Object.assign(view.nodes.get(path).row,{anchor:[0,1,0,1],pivot:[0,1],position:[x,-y],size:[width,height]});
     for(const action of player.story.program.commands.filter(a=>a.dialogue!==undefined&&a.dialogue<=player.engine.line)){
-      const text=String(action.text).replace(/<br\s*\/?\s*>/gi,'\n').replace(/<[^>]+>/g,'').replace(/\\n/g,'\n'),user=/<user>|<player>/.test(action.speaker||''),type=!action.speaker?'NarrationBalloon':user?'UserBalloon':'CharaBalloon';
+      const speaker = player.resolveSpeaker ? player.resolveSpeaker(action.speaker) : (action.speaker==='<user>'?'プレイヤー':action.speaker);
+      const rawText = player.resolveDialogue ? player.resolveDialogue(action.text) : action.text;
+      const text=String(rawText).replace(/<br\s*\/?\s*>/gi,'\n').replace(/<[^>]+>/g,'').replace(/\\n/g,'\n'),user=/<user>|<player>|司令官|プレイヤー/.test(action.speaker||''),type=!action.speaker?'NarrationBalloon':user?'UserBalloon':'CharaBalloon';
       const host=element('div','dotabyss-log-line'),layout=layoutText(text,font,{size:36,width:1352,lineHeight:58}),textWidth=Math.max(160,Math.ceil(layout.width)),textHeight=Math.ceil(layout.height),boxHeight=textHeight+40;
       const height=Math.max(type==='CharaBalloon'?204:76,boxHeight+(type==='CharaBalloon'?49:0));Object.assign(host.style,{width:`calc(${rowWidth} * var(--native-unit))`,height:`calc(${height} * var(--native-unit))`,position:'relative'});list.append(host);
       const rows=this.data.views[type].map(r=>({...r,anchor:[...r.anchor],position:[...r.position],size:[...r.size]}));rows[0]={...rows[0],anchor:[0,0,1,1],position:[0,0],size:[0,0],pivot:[.5,.5]};
@@ -142,7 +144,7 @@ export class OriginalStoryUi{
         const actor=player.story.actors?.[action.actor],icon=actor?.icon||player.story.icons?.[action.speaker];if(icon)bubble.setImage('Thumbnail_Chara_SS/Waiting/RootUI/Fade/Base/SpriteCharaIcon',icon);
         const path='Serif/MainBalloon/Button',mainWidth=textWidth+116;rect(bubble,'Serif',192.5,.5,rowWidth-192.5,height-.5);rect(bubble,'Serif/Name',.5,0,rowWidth-193,42);rect(bubble,'Serif/MainBalloon',.5,48,mainWidth,boxHeight);
         rect(bubble,path,4,0,mainWidth-4,boxHeight);rect(bubble,path+'/Box',20,0,textWidth+60,boxHeight);rect(bubble,path+'/Box/Text',20,20,textWidth,textHeight);
-        rect(bubble,path+'/Sound',mainWidth-40,(boxHeight-82)/2,36,82);bubble.layout();bubble.setText('Serif/Name/TextName',action.speaker);bubble.setText(path+'/Box/Text',text,{lineHeight:58});
+        rect(bubble,path+'/Sound',mainWidth-40,(boxHeight-82)/2,36,82);bubble.layout();bubble.setText('Serif/Name/TextName',speaker);bubble.setText(path+'/Box/Text',text,{lineHeight:58});
         const voice=action.cue&&player.story.audio[action.cue]?.file;bubble.show(path+'/Sound',!!voice);if(voice)bubble.bind(path+'/Sound/Button_Sound','重听配音',()=>player.audio.play('log-voice',voice,{kind:'voice'}));
       }
       host.tabIndex=0;host.setAttribute('role','button');host.setAttribute('aria-label','回到这句对白');const replay=()=>{this.closeModal(true);player.engine.seek(action.dialogue);};host.addEventListener('click',replay);host.addEventListener('keydown',e=>{if(e.key==='Enter'){e.stopPropagation();replay();}});
