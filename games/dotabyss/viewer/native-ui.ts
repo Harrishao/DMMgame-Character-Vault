@@ -30,13 +30,28 @@ export async function loadNativeUi(file,asset){
   return cache.get(key);
 }
 
-export function layoutText(text,font,{size=36,width=1400,lineHeight=size*1.5,spacing=0}: any={}){
+let measureCtx: any=null;
+function measureCharWidth(char: string, size: number): number {
+  if (typeof document !== 'undefined') {
+    if (!measureCtx) {
+      const c = document.createElement('canvas');
+      measureCtx = c.getContext('2d');
+    }
+    if (measureCtx) {
+      measureCtx.font = `${size}px "TTCuYuanJ","Yu Gothic",Meiryo,sans-serif`;
+      return measureCtx.measureText(char).width;
+    }
+  }
+  return char.charCodeAt(0) > 255 ? size : size * 0.55;
+}
+
+export function layoutText(text,font,{size=36,width=1400,lineHeight=size*1.5,spacing=0,useChineseFont=false}: any={}){
   const scale=size/font.size,lines=[{glyphs:[],width:0}];
   for(const char of String(text).replace(/\r/g,'')){
     if(char==='\n'){lines.push({glyphs:[],width:0});continue;}
-    const glyph=font.glyphs[char.codePointAt(0)],advance=(glyph?.[6]??font.size)*scale+spacing;
+    const glyph=useChineseFont?null:font.glyphs?.[char.codePointAt(0)],advance=glyph?((glyph[6]??font.size)*scale+spacing):(measureCharWidth(char,size)+spacing);
     let line=lines.at(-1);if(line.glyphs.length&&line.width+advance>width){line={glyphs:[],width:0};lines.push(line);}
-    line.glyphs.push({char,glyph,x:line.width});line.width+=advance;
+    line.glyphs.push({char,glyph,x:line.width,advance});line.width+=advance;
   }
   return {lines,scale,lineHeight,width:Math.min(width,Math.max(0,...lines.map(line=>line.width))),height:Math.max(size,(lines.length-1)*lineHeight+size)};
 }
@@ -46,19 +61,17 @@ export function paintText(element,text,font,style: any={},width=1400,height=100)
   if(!font?.fillImage||!width||!height)return;
   canvas.width=Math.max(1,Math.ceil(width));canvas.height=Math.max(1,Math.ceil(height));
   const context=canvas.getContext('2d');if(!context)return;
-  const size=style.size||36,layout=layoutText(text,font,{size,width,lineHeight:style.lineHeight||size*1.55,spacing:style.spacing||0});
+  const size=style.size||36,useChineseFont=style.useChineseFont??false,layout=layoutText(text,font,{size,width,lineHeight:style.lineHeight||size*1.55,spacing:style.spacing||0,useChineseFont});
   const top=style.vertical===512?(height-layout.height)/2:style.vertical===1024?height-layout.height:0;
   function draw(atlas,tint,outline=false){
     const ink=document.createElement('canvas');ink.width=canvas.width;ink.height=canvas.height;const ctx=ink.getContext('2d');
     layout.lines.forEach((line,lineIndex)=>{
       const left=style.horizontal===2?(width-line.width)/2:style.horizontal===4?width-line.width:0;
       for(const {char,glyph,x}of line.glyphs){
-        if(!glyph){
-          // The original atlas covers Japanese dialogue, but not every Chinese
-          // character in local chapter labels or a user-supplied player name.
-          ctx.font=`${size}px "Yu Gothic",Meiryo,sans-serif`;ctx.textBaseline='alphabetic';
+        if(!glyph||useChineseFont){
+          ctx.font=`${size}px "TTCuYuanJ","Yu Gothic",Meiryo,sans-serif`;ctx.textBaseline='alphabetic';
           const baseline=top+lineIndex*layout.lineHeight+font.ascent*layout.scale;
-          if(outline){ctx.lineWidth=size*.12;ctx.lineJoin='round';ctx.strokeText(char,left+x,baseline);}else ctx.fillText(char,left+x,baseline);
+          if(outline){ctx.lineWidth=size*(typeof style.outline==='number'?style.outline*1.6:.22);ctx.lineJoin='round';ctx.strokeText(char,left+x,baseline);}else ctx.fillText(char,left+x,baseline);
           continue;
         }
         if(!glyph[2]||!glyph[3])continue;

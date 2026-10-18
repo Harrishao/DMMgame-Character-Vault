@@ -88,7 +88,7 @@ function createServer({ dataRoot = DEFAULT_DATA, gamesRoot = DEFAULT_GAMES, fetc
             stylesheet: game.stylesheet ? '/modules/' + game.id + '/styles.css?v=' + encodeURIComponent(game.revision) : null, revision: game.revision }));
         })); return;
       }
-      const moduleFile = /^\/modules\/([a-z0-9][a-z0-9_-]{0,63})\/(module\.js|styles\.css|vendor\/[a-zA-Z0-9_.-]+)$/.exec(pathname);
+      const moduleFile = /^\/modules\/([a-z0-9][a-z0-9_-]{0,63})\/(module\.js|styles\.css|vendor\/[a-zA-Z0-9_./-]+)$/.exec(pathname);
       if (moduleFile && ['GET', 'HEAD'].includes(req.method)) {
         const game = registry.list().find(game => game.id === moduleFile[1]); if (!game) throw fail('游戏模块未安装。', 404);
         const relative = moduleFile[2];

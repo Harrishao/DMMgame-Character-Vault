@@ -11,6 +11,17 @@ const node=(tag,className?: any,text?: any)=>{const item=document.createElement(
 const number=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
 const on=value=>String(value).toLowerCase()==='on'||value==='1';
 const colors={black:'#000000',white:'#ffffff',red:'#ff0000'};
+
+async function ensureChineseFont() {
+  if (typeof document === 'undefined' || typeof FontFace === 'undefined') return;
+  if (document.fonts?.check?.('16px TTCuYuanJ')) return;
+  try {
+    const font = new FontFace('TTCuYuanJ', 'url(/games/dotabyss/vendor/fonts/TTCuYuanJ.ttf)');
+    await font.load();
+    document.fonts.add(font);
+  } catch {}
+}
+
 export class DotabyssStoryPlayer{
   declare container: any;
   declare asset: any;
@@ -69,11 +80,13 @@ export class DotabyssStoryPlayer{
   constructor(container,{asset,assetRoot,positionKey,onError=()=>{}}){
     this.container=container;this.asset=asset;this.assetRoot=assetRoot;this.positionKey=positionKey;this.onError=onError;this.token=0;this.animations=new Set<string>();this.activeModel=null;this.auto=false;this.hiddenUi=false;
     this.translated=localStorage.getItem('dotabyss-story-translate')!=='false';this.namesMap={};this.dialoguesMap={};this.currentAction=null;
+    ensureChineseFont();
     this.audio=new StoryAudio({asset});this.observer=new ResizeObserver(()=>this.fit());this.visibility=()=>{if(document.hidden)this.audio.pauseAll();else this.audio.resumeAll();};document.addEventListener('visibilitychange',this.visibility);
     this.render();this.observer.observe(this.stage);
   }
   render(){
     this.stage=node('div','dotabyss-stage');this.stage.tabIndex=0;this.stage.setAttribute('aria-label','DOTABYSS 剧情画面，点击或按空格继续');
+    this.stage.dataset.translated=String(this.translated);
     this.back=node('img','dotabyss-background');this.back.alt='剧情背景';this.back.hidden=true;
     this.camera=node('div','dotabyss-camera');this.motion=node('div','dotabyss-model');this.camera.append(this.motion);this.overlay=node('div','dotabyss-fade');
     this.window=node('div');this.marker=node('span');this.marker.hidden=true;this.speed={value:'40'};
@@ -114,7 +127,7 @@ export class DotabyssStoryPlayer{
         this.namesMap=data.names||{};this.dialoguesMap=data.dialogues||{};
         if(this.translated&&this.currentAction)this.showText(this.currentAction.speaker,this.currentAction.text,true);
       }).catch(()=>{});
-    await Promise.race([fetchTrans, new Promise(resolve=>setTimeout(resolve, 800))]);
+    await Promise.race([Promise.all([fetchTrans, ensureChineseFont()]), new Promise(resolve=>setTimeout(resolve, 800))]);
     if(this.story!==story)return;
     this.engine=new StoryEngine(story.program,{execute:(action,options)=>this.execute(action,options),reset:()=>this.reset(),stop:()=>this.stop(),stopVoice:()=>this.audio.stop('voice'),reveal:()=>this.reveal(),finish:()=>this.finish()},{onLine:(action,line)=>this.line(action,line),onEnd:()=>{this.next.disabled=true;this.position.textContent='剧情结束';},onError:error=>this.fail(error)});
     const saved=Number(localStorage.getItem(this.positionKey));const line=Number.isInteger(saved)&&saved>=0&&saved<story.program.dialogue?saved:0;await this.engine.start({line});
@@ -171,6 +184,7 @@ export class DotabyssStoryPlayer{
   }
   toggleTranslation(){
     this.translated=!this.translated;
+    this.stage.dataset.translated=String(this.translated);
     localStorage.setItem('dotabyss-story-translate',String(this.translated));
     if(this.toolbar.translate){
       this.toolbar.translate.textContent=this.translated?'翻译：开':'翻译：关';
@@ -210,7 +224,7 @@ export class DotabyssStoryPlayer{
     const type=()=>{if(token!==this.token)return;this.writeText(letters.slice(0,++at).join(''));if(at<letters.length&&this.typing)this.typeTimer=setTimeout(type,this.textInterval);else{this.typing=false;this.writeText(plain);this.marker.hidden=false;}};
     if(this.typing)type();else{this.writeText(plain);this.marker.hidden=!this.theme.marker?.file;}
   }
-  writeText(value){if(this.textMode)paintText(this.scene.overlay,value,Object.values<any>(this.nativeData.fonts)[0],{size:36,outline:.15,lineHeight:64,horizontal:2,vertical:512},1536,this.textMode==='messageTextUnder'?292:648);else this.ui?.writeText(this.speakerName||'',value);}
+  writeText(value){if(this.textMode)paintText(this.scene.overlay,value,Object.values<any>(this.nativeData.fonts)[0],{size:36,outline:.15,lineHeight:64,horizontal:2,vertical:512,useChineseFont:this.translated},1536,this.textMode==='messageTextUnder'?292:648);else this.ui?.writeText(this.speakerName||'',value);}
   reveal(){if(!this.typing)return false;clearTimeout(this.typeTimer);this.typing=false;this.writeText(this.fullText);this.marker.hidden=!this.theme.marker?.file;return true;}
   line(action,line){this.lineDisplayed=performance.now();this.previous.disabled=line===0;this.next.disabled=false;this.toolbar.restart.disabled=false;this.position.textContent=(line+1)+' / '+this.story.program.dialogue;localStorage.setItem(this.positionKey,String(line));}
   showLog(){this.ui?.openLog();this.log=this.ui?.modal?.host;}
