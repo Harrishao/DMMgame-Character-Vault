@@ -6,6 +6,7 @@ export class StoryControls {
   previous: HTMLButtonElement;
   next: HTMLButtonElement;
   restart: HTMLButtonElement;
+  translate?: HTMLButtonElement;
   fullscreen: HTMLButtonElement;
   close: HTMLButtonElement;
   events = new AbortController();
@@ -13,8 +14,8 @@ export class StoryControls {
   guardTimer: ReturnType<typeof setTimeout>;
   guardCancel = false;
 
-  constructor(public host: HTMLElement, actions: { previous: StoryAction; next: StoryAction; restart: StoryAction },
-    { className = '', position, onError = () => {} }: { className?: string; position?: HTMLElement; onError?: (error: Error) => void } = {}) {
+  constructor(public host: HTMLElement, actions: { previous: StoryAction; next: StoryAction; restart: StoryAction; translate?: StoryAction },
+    { className = '', position, onError = () => {}, translateLabel = '翻译：开' }: { className?: string; position?: HTMLElement; onError?: (error: Error) => void; translateLabel?: string } = {}) {
     this.element.className = 'story-controls ' + className;
     const button = (label: string, action: StoryAction) => {
       const item = document.createElement('button');
@@ -30,7 +31,13 @@ export class StoryControls {
     this.restart = button('从头播放', actions.restart);
     this.previous.disabled = this.next.disabled = this.restart.disabled = true;
     const navigation = document.createElement('div'); navigation.className = 'story-controls-navigation';
-    navigation.append(this.previous, this.next, this.restart); this.element.append(navigation);
+    navigation.append(this.previous, this.next, this.restart);
+    if (actions.translate) {
+      this.translate = button(translateLabel, actions.translate);
+      this.translate.classList.add('story-translate-button');
+      navigation.append(this.translate);
+    }
+    this.element.append(navigation);
     if (position) { position.classList.add('story-controls-position'); position.setAttribute('aria-live', 'polite'); this.element.append(position); }
     const windowControls = document.createElement('div'); windowControls.className = 'story-controls-window';
     this.fullscreen = button('全屏', () => this.toggleFullscreen());
